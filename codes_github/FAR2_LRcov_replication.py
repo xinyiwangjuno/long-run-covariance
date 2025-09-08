@@ -13,6 +13,15 @@ from utils import *
 from training_HLS import *
 from tqdm import tqdm
 import os
+import sys
+
+# Get the directory where the current script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Change the working directory to that location
+os.chdir(script_dir)
+
+print("Current working directory set to:", os.getcwd())
 
 ds = [500, 1000, 2000, 4000, 8000]
 band_types = ["2","3", "4","5"]
@@ -27,65 +36,67 @@ band_type_map = {
     "fix_2": lambda d: 2,
 }
 model = "FAR2" # model = "FAR1"
-kern_type = "Bartlett" # Choose from "Bartlett","Parzen","TH","QS"
-for d in ds:    
-    for band_type in band_types:
-        # Parameters for AR models
-        J = 5
-        num_components = 5
-        band = band_type_map[band_type](d)
-        print(band)
-        sigma = 1.0 / np.arange(1, J + 1)
-        porder = 0
-        nrepli = 1000
-        psi1 = 0.5 * np.eye(J)
-        psi2 = -0.2 * np.eye(J)
+kern_list = ["TH","QS"]  # Choose from "Bartlett", "Parzen", "TH","QS"
+for kern_type in kern_list:
+    for d in ds:    
+        for band_type in band_types:
+            # Parameters for AR models
+            J = 5
+            num_components = 5
+            band = band_type_map[band_type](d)
+            print(band)
+            sigma = 1.0 / np.arange(1, J + 1)
+            porder = 0
+            nrepli = 1000
+            psi1 = 0.5 * np.eye(J)
+            psi2 = -0.2 * np.eye(J)
 
-        # Estimated True long-run covariance
-        if model == "FAR2":
-            N = 500
-            d_large = 100000
-            band_true = round(d_large ** (1 / int(band_type)))
-            filename = f"true_LRcov/empirical_cov_far2_N{N}_d{d_large}_band{band_true}_kernel{kern_type}.csv"
-            theoretical_cov_true = np.loadtxt(filename, delimiter=",")
+            # Estimated True long-run covariance
+            if model == "FAR2":
+                N = 500
+                d_large = 100000
+                band_true = round(d_large ** (1 / int(band_type)))
+                filename = f"true_LRcov/empirical_cov_far2_N{N}_d{d_large}_band{band_true}_kernel{kern_type}.csv"
+                theoretical_cov_true = np.loadtxt(filename, delimiter=",")
 
-        # Storage
-        squared_norms = []
+            # Storage
+            squared_norms = []
 
-        # Loop for multiple seeds
-        for seed in tqdm(range(nrepli)):
-            # Generate data
-            X_coef, F_basis, fd_basis = generate_far2_coef(d, J, Sigma=sigma, Psi1=psi1, Psi2=psi2, seed=seed)
+            # Loop for multiple seeds
+            for seed in tqdm(range(nrepli)):
+                # Generate data
+                X_coef, F_basis, fd_basis = generate_far2_coef(d, J, Sigma=sigma, Psi1=psi1, Psi2=psi2, seed=seed)
 
-            # FPCA
-            fpca_fbasis = FPCA(n_components=num_components)
-            fpca_fbasis.fit(fd_basis)
-            scores = fpca_fbasis.transform(fd_basis)
-            E_coef = fpca_fbasis.components_.coefficients
-            center_dat = scores
+                # FPCA
+                fpca_fbasis = FPCA(n_components=num_components)
+                fpca_fbasis.fit(fd_basis)
+                scores = fpca_fbasis.transform(fd_basis)
+                E_coef = fpca_fbasis.components_.coefficients
+                center_dat = scores
 
-            # Estimate long-run covariance
-            X = torch.tensor(center_dat, dtype=torch.float32)
-            cov_weighted, _, _ = cov_l(X, porder, band, kern_type)
-            cov_weighted_np = E_coef.T @ cov_weighted.detach().numpy() @ E_coef
+                # Estimate long-run covariance
+                X = torch.tensor(center_dat, dtype=torch.float32)
+                cov_weighted, _, _ = cov_l(X, porder, band, kern_type)
+                cov_weighted_np = E_coef.T @ cov_weighted.detach().numpy() @ E_coef
 
-            # Riemann sum approximation of squared HS norm
-            diff = cov_weighted_np - theoretical_cov_true
-            delta = 1.0 / diff.shape[0]
-            squared_norm = np.sum(diff**2) * delta**2
-            squared_norms.append(squared_norm)
+                # Riemann sum approximation of squared HS norm
+                diff = cov_weighted_np - theoretical_cov_true
+                delta = 1.0 / diff.shape[0]
+                squared_norm = np.sum(diff**2) * delta**2
+                squared_norms.append(squared_norm)
 
-        # Get current script directory
-        current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Get current script directory
+            current_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # Create 'results' subfolder in the current directory
-        results_dir = os.path.join(current_dir, "results")
-        os.makedirs(results_dir, exist_ok=True)
+            # Create 'results' subfolder in the current directory
+            results_dir = os.path.join(current_dir, "results")
+            os.makedirs(results_dir, exist_ok=True)
 
-        # Construct the full file path
-        filename = f"{model}_d{d}_J{J}_numcomp{num_components}_band{band_type}_kernel{kern_type}.csv"
-        file_path = os.path.join(results_dir, filename)
+            # Construct the full file path
+            filename = f"{model}_d{d}_J{J}_numcomp{num_components}_band{band_type}_kernel{kern_type}.csv"
+            file_path = os.path.join(results_dir, filename)
 
-        # Save the CSV
-        pd.DataFrame({"squared_norm": squared_norms}).to_csv(file_path, index=False)
-        print(f"Saved to {file_path}")   
+            # Save the CSV
+            pd.DataFrame({"squared_norm": squared_norms}).to_csv(file_path, index=False)
+            print(f"Saved to {file_path}")   
+  
