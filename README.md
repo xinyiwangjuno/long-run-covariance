@@ -1,2 +1,2 @@
-RUN "simulate_true_ar_arma.py".
-INSTALL package "skfda" with command "pip install scikit-fda".
+RUN "FARMA22_LRcov_replication.py".
+
